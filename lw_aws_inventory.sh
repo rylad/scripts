@@ -8,36 +8,6 @@
 
 
 # Usage: ./lw_aws_inventory.sh
-while getopts a:p:j opt; do
-  case ${opt} in
-	a )
-	  IFS=', ' read -r -a accounts <<< "$OPTARG"
-	  ;;
-    p )
-      AWS_PROFILE=$OPTARG
-      ;;
-    j )
-      JSON="true"
-      ;;
-    \? )
-      echo "Usage: ./lw_aws_inventory.sh [-p profile] [-j]" 1>&2
-      exit 1
-      ;;
-    : )
-      echo "Usage: ./lw_aws_inventory.sh [-p profile] [-j]" 1>&2
-      exit 1
-      ;;
-  esac
-done
-shift $((OPTIND -1))
-
-# Set the initial counts to zero.
-EC2_INSTANCES=0
-RDS_INSTANCES=0
-REDSHIFT_CLUSTERS=0
-ELB_V1=0
-ELB_V2=0
-NAT_GATEWAYS=0
 
 function getRegions {
   aws --profile $account ec2 describe-regions --output json | jq -r '.[] | .[] | .RegionName'
@@ -76,7 +46,7 @@ function getNatGateways {
 
 function textoutput {
   echo "######################################################################"
-  echo "Lacework inventory collection complete for $account."
+  echo "Lacework inventory collection complete for $account. Running total is below"
   echo ""
   echo "EC2 Instances:     $EC2_INSTANCES"
   echo "RDS Instances:     $RDS_INSTANCES"
@@ -100,7 +70,8 @@ function jsonoutput {
   echo "}"
 }
 
-for account in "${accounts[@]}"; do
+function defaultAccount {
+	#run for default usage, no flag should call default in AWS creds
 	for r in $(getRegions $account ); do
 	  if [ "$JSON" != "true" ]; then
 		echo $r
@@ -123,12 +94,52 @@ for account in "${accounts[@]}"; do
 	  natgw=$(getNatGateways $account  $r)
 	  NAT_GATEWAYS=$(($NAT_GATEWAYS + $natgw))
 	done
-	echo "Finished the count for $account"
-	TOTAL=$(($EC2_INSTANCES + $RDS_INSTANCES + $REDSHIFT_CLUSTERS + $ELB_V1 + $ELB_V2 + $NAT_GATEWAYS))
+}
 
-	if [ "$JSON" == "true" ]; then
-	  jsonoutput
-	else
-	  textoutput
-	fi
+function multipleAccounts {
+	#run for -a flag takes a list of comma separated values (i.e "account1,account2,account3")
+	for account in "${accounts[@]}"; do
+		defaultAccount
+		echo "Finished the count for $account"
+		TOTAL=$(($EC2_INSTANCES + $RDS_INSTANCES + $REDSHIFT_CLUSTERS + $ELB_V1 + $ELB_V2 + $NAT_GATEWAYS))
+
+		if [ "$JSON" == "true" ]; then
+		  jsonoutput
+		else
+		  textoutput
+		fi
+	done
+}
+
+while getopts a:p:j opt; do
+  case ${opt} in
+	a )
+	  IFS=', ' read -r -a accounts <<< "$OPTARG"
+	  multipleAccounts
+	  ;;
+    p )
+      AWS_PROFILE=$OPTARG
+	  defaultAccount
+      ;;
+    j )
+      JSON="true"
+      ;;
+    \? )
+      echo "Usage: ./lw_aws_inventory.sh [-p profile] [-j]" 1>&2
+      exit 1
+      ;;
+    : )
+      echo "Usage: ./lw_aws_inventory.sh [-p profile] [-j]" 1>&2
+      exit 1
+      ;;
+  esac
 done
+shift $((OPTIND -1))
+
+# Set the initial counts to zero.
+EC2_INSTANCES=0
+RDS_INSTANCES=0
+REDSHIFT_CLUSTERS=0
+ELB_V1=0
+ELB_V2=0
+NAT_GATEWAYS=0
